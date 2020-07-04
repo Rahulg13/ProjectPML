@@ -1,0 +1,140 @@
+---
+title: "ProjectPML"
+author: "Rahulg13"
+date: "03/07/2020"
+output: html_document
+---
+
+## R Markdown
+
+## Objective of the project
+To predict the manner of exercise, whether it is the correct way or the incorrect way
+
+## Data sources 
+Data was downloaded using read.csv() function from the following sources. 
+### Training Source : <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+### Test Source : <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+```{r, echo = FALSE, results = "hide"}
+rm(list = ls())
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+A basic inspection using summary function highlighted that many variables carry mostly NAs or blanks "". The sample summary result for such variable is produced below - 
+```{r}
+summary(training[, 12:15])
+```
+As can be seen above, the extremely high number of NAs or ""s make the variable redundant for prediction purposes. 
+
+Such columns carrying NAs or ""s were removed. 
+First seven variables consist of variables not relevant to prediction like time, name, etc. So, they are removed too. 
+```{r}
+x1 <- (training == "")
+y1 <- apply(x1, 2, sum)
+y1 <- y1/19622
+colindex1 <- (y1 > 0.5)
+colindex1 <- which(colindex1 == TRUE)
+x <- is.na(training)
+y <- apply(x, 2, sum)
+y <- y/19622
+colindex <- (y > 0.5)
+colindex <- which(colindex == TRUE)
+col1 <- union(colindex, colindex1)
+
+
+training <- training[, -col1]
+testing <- testing[, - col1]
+
+training <- training[, -c(1:7)]
+testing <- testing[, -c(1:7)]
+
+dim(training)
+dim(testing)
+```
+Thus, the dimensions of the datasets were reduced.
+
+## Methodology 
+1. Create Data Partition
+2. Train models for different methods 
+        a. Classification Trees
+        b. Random Forests 
+        c. GBM
+3. Testing accuracy
+4. Final selection of model and prediction
+
+
+# Step 1 : Create Data Partition
+Training data was divided into training and testing sets using the following code.
+
+```{r, results = "hide"}
+set.seed(1313)
+library(caret)
+trainIndex <-  createDataPartition(training$classe, p = 0.8, list = FALSE)
+train1 <- training[trainIndex, ]
+test1 <- training[-trainIndex, ]
+```
+
+This provided us with two sets of data - one to train the model with and second to test the accuracy of the model.
+
+
+# Step 2 : Training the models 
+
+Three models were trained using Classification trees, random forests and gradient boosting (gbm). Each of them was cross validated using a k-fold cross validation using 5 folds. More than 5 fold increase the computation time without any benefit of increased accuracy.
+
+## Model 1 : Classification trees 
+
+```{r}
+controltrain <- trainControl(method = "cv", number = 5)
+model1 <- train(classe ~ ., data = train1, method = "rpart", trControl = controltrain)
+predict1 <- predict(model1, test1[,-53])
+accuracy1 <- confusionMatrix(predict1, test1$classe)
+
+```
+
+For a quick look at the results, we plot the tree using rpart.plot. The result is as follows - 
+```{r, echo = FALSE}
+library(rattle)
+fancyRpartPlot(model1$finalModel)
+```
+The above visualization itself raises serious question regarding the accuracy of the model as D remains unused, which effectively means 0 % accuracy for those with results D. The more detailed parameters are calculated later.
+
+
+## Model 2 : Random Forests
+Here the choice of trees is based on keeping the computation time reasonable without compromising the accuracy of model. Increasing it to 32 does not lead to any significant benefits. 
+```{r}
+controltrain <- trainControl(method = "cv", number = 5)
+model2 <- train(classe ~ ., data = train1, method = "rf", trControl = controltrain, ntree = 16)
+
+predict2 <- predict(model2, test1[,-53])
+accuracy2 <- confusionMatrix(predict2, test1$classe)
+
+```
+
+## Model 3 : Gradient Boosting Method 
+
+```{r, results = "hide"}
+controltrain <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+model3 <- train(classe ~ ., data = train1, method = "gbm", trControl = controltrain, verbose = TRUE)
+predict3 <- predict(model3, test1[,-53])
+accuracy3 <- confusionMatrix(predict3, test1$classe)
+
+```
+
+
+The results were as follows (in the sequence of operations) - 
+```{r}
+accuracy1[[3]][1]
+accuracy2[[3]][1]
+accuracy3[[3]][1]
+```
+
+Clearly, Random Forests offer by far exceeds the accuracy of the other two methods. So, random forests is chosen as the method for making requisite predictions. 
+
+
+# Step 4: MAKING FINAL PREDICTION 
+Final prediction is as follows - 
+```{r}
+final_predict <- predict(model2, testing[, -53])
+final_predict
+```
